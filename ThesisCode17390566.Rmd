@@ -1,0 +1,2373 @@
+---
+title: "ThesisCode17390566"
+author: "Conall Gordon"
+date: "2024-08-22"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+
+library(reshape2)
+
+library(mclust)
+
+library(pgmm)
+
+library(IMIFA)
+
+library(mclust)
+
+library(R.matlab)
+
+library(blockcluster)
+
+library(pdfCluster)
+
+library(dplyr)
+
+library(gitcreds)
+
+```
+
+# Import Salinas
+
+```{r}
+# Specify the path to your .mat file
+file_path <- "SalinasA_corrected.mat"
+
+# Read the .mat file
+data <- readMat(file_path)
+
+# Check the structure of the imported data
+str(data)
+```
+
+## Reshape
+
+```{r}
+hyperspectral_data <- data$salinasA.corrected
+
+# Get the dimensions of the data
+dims <- dim(hyperspectral_data)
+n_x <- dims[1]
+n_y <- dims[2]
+n_wavelengths <- dims[3]
+
+# Initialize an empty data frame to store the reshaped data
+reshaped_df <- data.frame(matrix(nrow = n_x * n_y, ncol = n_wavelengths))
+colnames(reshaped_df) <- paste("Wavelength", 1:n_wavelengths, sep = "_")
+
+# Populate the data frame with pixel intensity values
+pixel_index <- 1
+for (i in 1:n_x) {
+  for (j in 1:n_y) {
+    reshaped_df[pixel_index, ] <- hyperspectral_data[i, j, ]
+    pixel_index <- pixel_index + 1
+  }
+}
+
+# Add a column for pixel identifiers
+reshaped_df$Pixel <- 1:(n_x * n_y)
+reshaped_df <- reshaped_df[, -ncol(reshaped_df)]  # Remove the last column
+reshaped_matrix <- as.matrix(reshaped_df)
+
+# View the reshaped data
+head(reshaped_matrix)
+str(reshaped_matrix)
+
+```
+
+## Import ground truth
+
+```{r}
+# Read the .mat file
+gt_data <- readMat("SalinasA_gt.mat")
+
+# Check the structure of the imported data
+str(gt_data)
+head(gt_data)
+mat = as.matrix(gt_data$salinasA.gt)
+
+# Get dimensions of the matrix
+n_rows <- nrow(mat)
+n_cols <- ncol(mat)
+
+# Initialize an empty vector to store values
+vec <- numeric(n_rows * n_cols)
+
+# Manual extraction into vector
+index <- 1
+for (i in 1:n_rows) {
+  for (j in 1:n_cols) {
+    vec[index] <- mat[i, j]
+    index <- index + 1
+  }
+}
+
+# Print the vector
+print(vec)
+
+gt_vec = vec
+
+gt_vec_1 = gt_vec + 1
+
+```
+
+## Subset Data to Remove Other for Clustering
+
+We will therefore be clustering filtered_matrix, which consists of 5348 pixels or rows. We will be looking for 6 clusters in this instance then.
+
+```{r}
+# Identify the indices of rows where gt_vec is not 1
+valid_indices <- which(gt_vec != 0)
+
+# Subset the reshaped_matrix to include only those rows
+filtered_matrix <- reshaped_matrix[valid_indices, ]
+
+# Check the structure of the filtered_matrix
+str(filtered_matrix)
+
+# Optionally, subset gt_vec as well if needed
+filtered_gt_vec <- gt_vec[valid_indices]
+
+# Check the structure of the filtered_gt_vec
+str(filtered_gt_vec)
+
+save(filtered_matrix, file = "salinas_filtered_matrix.RData")
+```
+
+
+# Import TCD (micoplastics) data
+
+This file was originally in txt format, but has been prepared and can be accessed below.
+
+```{r}
+TCD_data <- read.csv("TCD.xls")
+TCD_data <- as.matrix(TCD_data)
+
+# View the imported data
+View(TCD_data)  # Show first few rows
+```
+
+
+#Import Emulsion data
+
+```{r}
+
+# Specify the path to your .mat file
+file_path <- "Oil-in-Water-Emulsion.mat"
+
+# Read the .mat file
+dataEmulsion <- readMat(file_path)
+
+# Check the structure of the imported data
+str(dataEmulsion)
+
+# Access the emulsion data
+emulsion_data <- dataEmulsion$Oil.In.Water.Emulsion
+emulsion_data <- emulsion_data[, 1:125]
+
+```
+
+
+
+# Tutorial to adapt code 
+
+To be concise, the code below is configured to run for the Salinas data only. However, it can be easily adapted to any of the datasets above by simply changing the input data and the image() configuration. Below I will give an example of how k-means clustering is applied to all three methods, and therefore it will be clear how the image() function differs in configuration.
+
+## K-means for Salinas
+
+```{r}
+k <- 6  # You can choose a different number based on your specific needs
+
+# Perform k-means clustering
+set.seed(123)  # Setting seed for reproducibility
+kmeans_result <- kmeans(filtered_matrix, centers = k, nstart = 25)
+
+# Examine the results
+print(kmeans_result)
+
+# Cluster assignments
+clusters <- kmeans_result$cluster
+
+```
+
+### Visualisation
+
+```{r}
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_kmeans <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_kmeans[valid_indices] <- clusters
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_kmeans)
+
+
+cluster_matrix_kmeans <- matrix(final_cluster_assignments_kmeans, nrow = 83, ncol = 86, byrow = TRUE)
+
+cluster_colors <- c(
+  "black",
+  "purple",
+  "yellow",         
+  "orange",           
+  "green",          
+  "blue",            
+  "red"           
+)
+
+
+# Produce image
+cluster_matrix_kmeans_image = image(cluster_matrix_kmeans[,nrow(cluster_matrix_kmeans):1], col = cluster_colors, main = "K-means Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "kmeans_clustering.png")
+
+
+cluster_matrix_kmeans_image = image(cluster_matrix_kmeans[,nrow(cluster_matrix_kmeans):1], col = cluster_colors, main = "", axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+
+## K-means for emulsion
+
+```{r}
+k <- 4  # You can choose a different number based on your specific needs
+
+# Perform k-means clustering
+set.seed(123)  # Setting seed for reproducibility
+kmeans_result <- kmeans(emulsion_data, centers = k, nstart = 25)
+
+# Examine the results
+print(kmeans_result)
+
+# Cluster assignments
+clusters <- kmeans_result$cluster
+
+# Add cluster assignments to the original data (optional)
+emulsion_data_with_clusters <- cbind(emulsion_data, cluster = clusters)
+
+cluster_means <- aggregate(emulsion_data, by = list(cluster = clusters), FUN = mean)
+
+# Print the cluster means
+print(cluster_means)
+
+# Extract the mean for a specific cluster as a vector
+# Example: Extract the mean for the first cluster (cluster 1)
+cluster1_mean_vector <- cluster_means[cluster_means$cluster == 1, -1]
+
+```
+
+### Visualisation
+
+```{r}
+cluster_matrix <- matrix(clusters, nrow = 60, ncol = 60, byrow = TRUE)
+
+cluster_matrix <- t(cluster_matrix)
+
+
+
+cluster_colors <- c(
+  "purple",# For 1
+  "green",             # For 10
+  "orange",           # For 11
+  "yellow"          # For 12      
+)
+
+# Visualize clustering results using image
+image(t(cluster_matrix), col = cluster_colors, main = "K-means Clustering Results", axes = FALSE)
+
+# Save the plot as a PNG file
+png(filename = "kmeans_clustering.png")
+
+# Visualize clustering results using image
+image(t(cluster_matrix), col = cluster_colors, main = "K-means Clustering Results", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+## K-means for TCD
+
+```{r}
+k <- 2  # You can choose a different number based on your specific needs
+
+# Perform k-means clustering
+set.seed(123)  # Setting seed for reproducibility
+
+kmeans_result <- kmeans(TCD_data, centers = k, nstart = 25)
+
+# Examine the results
+print(kmeans_result)
+
+# Cluster assignments
+clusters <- kmeans_result$cluster
+
+# Add cluster assignments to the original data (optional)
+intensity_matrix_with_clusters <- cbind(TCD_data, cluster = clusters)
+
+cluster_means <- aggregate(TCD_data, by = list(cluster = clusters), FUN = mean)
+
+# Print the cluster means
+print(cluster_means)
+
+# Extract the mean for a specific cluster as a vector
+# Example: Extract the mean for the first cluster (cluster 1)
+cluster1_mean_vector <- cluster_means[cluster_means$cluster == 1, -1]
+
+```
+
+### Visualisation 
+
+Perhaps investigate with just 2 clusters? Background and amorphous polypropylene.
+
+```{r}
+cluster_matrix <- matrix(clusters, nrow = 111, ncol = 165, byrow = TRUE)
+
+cluster_matrix <- cluster_matrix[nrow(cluster_matrix):1, ]
+
+cluster_colors <- rainbow(2)
+
+# Visualize clustering results using image
+image(t(cluster_matrix), col = cluster_colors, main = "K-means Clustering Results", axes = FALSE)
+
+# Save the plot as a PNG file
+png(filename = "kmeans_clustering.png")
+
+# Visualize clustering results using image
+image(t(cluster_matrix), col = cluster_colors, main = "K-means Clustering Results", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+
+# Salinas Version
+
+The code below is specifically for Salinas, but can be adapted easily for each dataset as descibed above.
+
+# Visualise ground truth
+
+```{r}
+# Reshape
+matrix_gt <- matrix(gt_vec, nrow = 83, ncol = 86, byrow = TRUE) 
+
+# Configure colours, might be neccessary to change for visualisation
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  rep("white", 9),# For 2 through 9
+  "red",             # For 10
+  "green",           # For 11
+  "yellow",          # For 12
+  "blue",            # For 13
+  "purple"           # For 14
+)
+
+# Image
+matrix_gt_image = image(matrix_gt[,nrow(matrix_gt):1], col = cluster_colors, main = "Groundtruth Clusters", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "Groundtruth.png")
+
+matrix_gt_image = image(matrix_gt[,nrow(matrix_gt):1], col = cluster_colors, main = "", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+# Hierarchical Clustering
+
+```{r}
+
+
+# Distance Matrix, distance measure between rows of data
+distMatrix = dist(filtered_matrix, method = "euclidean")
+
+## Single Linkage
+
+# Hierarchical Clustering
+hierClust_s = hclust(distMatrix, method = "single")
+plot(hierClust_s)
+
+# Cut tree 
+CutDend_s = cutree(hierClust_s, k = 6)
+
+# Vector of cluster assignment
+CutDend_s
+
+
+
+## Average Linkage
+
+# Hierarchical Clustering
+hierClust_av = hclust(distMatrix, method = "average")
+plot(hierClust_av)
+
+# Cut tree 
+CutDend_av = cutree(hierClust_av, k = 6)
+
+# Vector of cluster assignment
+CutDend_av
+
+
+## Complete Linkage
+
+# Hierarchical Clustering
+hierClust_c = hclust(distMatrix, method = "complete")
+plot(hierClust_c)
+
+# Cut tree 
+CutDend_c = cutree(hierClust_c, k = 6)
+
+# Vector of cluster assignment
+CutDend_c
+
+
+```
+
+## Visualisation of Single Linkage
+
+```{r}
+# Recombine
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_s <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_s[valid_indices] <- CutDend_s
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_s)
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "red",             # For 10
+  "green",           # For 11
+  "yellow",          # For 12
+  "blue",            # For 13
+  "purple"           # For 14
+)
+
+cluster_matrix_hierachical_s <- matrix(final_cluster_assignments_s, nrow = 83, ncol = 86, byrow = TRUE)
+
+
+cluster_matrix_hierachical_s_image = image(cluster_matrix_hierachical_s[,nrow(cluster_matrix_hierachical_s):1], col = cluster_colors, main = "Hierarchical Clustering Results (Single)", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "hier_clustering_s.png")
+
+image(cluster_matrix_hierachical_s[,nrow(cluster_matrix_hierachical_s):1], col = cluster_colors, main = "", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+
+## Visualisation of Average Linkage
+
+```{r}
+# Recombine
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_av <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_av[valid_indices] <- CutDend_av
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_av)
+
+
+cluster_matrix_hierachical_av <- matrix(final_cluster_assignments_av, nrow = 83, ncol = 86, byrow = TRUE)
+
+
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "red",             # For 10
+  "green",           # For 11
+  "yellow",          # For 12
+  "purple",            # For 13
+  "blue"           # For 14
+)
+
+cluster_matrix_hierachical_av_image = image(cluster_matrix_hierachical_av[,nrow(cluster_matrix_hierachical_av):1], col = cluster_colors, main = "Hierarchical Clustering Results (Average)", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "hier_clustering_av.png")
+
+cluster_matrix_hierachical_av_image = image(cluster_matrix_hierachical_av[,nrow(cluster_matrix_hierachical_av):1], col = cluster_colors, main = "", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+## Visualisation of Complete Linkage
+
+```{r}
+# Recombine
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_c <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_c[valid_indices] <- CutDend_c
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_c)
+
+
+cluster_matrix_hierachical_c <- matrix(final_cluster_assignments_c, nrow = 83, ncol = 86, byrow = TRUE)
+
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "red",             # For 10
+  "green",           # For 11
+  "yellow",          # For 12
+  "blue",            # For 13
+  "purple"           # For 14
+)
+
+cluster_matrix_hierachical_c_image = image(cluster_matrix_hierachical_c[,nrow(cluster_matrix_hierachical_c):1], col = cluster_colors, main = "Hierarchical Clustering Results (Complete)", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "hier_clustering_c.png")
+
+cluster_matrix_hierachical_c_image = image(cluster_matrix_hierachical_c[,nrow(cluster_matrix_hierachical_c):1], col = cluster_colors, main = "", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+
+# Mclust
+
+## Investigate Optimal Model by BIC and ICL
+
+More complex models failed, such as 'VVV', in both cases.
+
+```{r}
+# Clustering with Mclust and displaying BIC selection
+
+BIC <- mclustBIC(filtered_matrix, G=1:9)
+summary(BIC)
+plot(BIC,      cex = 2,       # General text size
+     cex.lab = 2,   # Label text size
+     cex.axis = 2,  # Axis text size
+     cex.main = 2.5,    # Main title text size
+     cex.sub = 2,   # Subtitle text size
+     lwd = 3)
+
+
+png("MclustOptimalBIC.png", width = 1600, height = 1200)
+plot(BIC)
+dev.off()
+
+print(BIC)
+
+## Best is EEE with 4 components
+
+
+# Clustering with Mclust and displaying ICL selection
+
+ICL <- mclustICL(filtered_matrix, G=1:9)
+summary(ICL)
+
+plot(ICL)
+
+
+
+print(ICL)
+
+## Best is EEE with 4 components
+```
+
+
+## Fit Optimal BIC
+
+EEE 4
+
+```{r}
+OptimalBIC_ICL = Mclust(filtered_matrix, G = 4, modelnames = 'EEE')
+
+# Get the cluster assignments
+Opt_Mclust_clusters <- OptimalBIC_ICL$classification
+
+```
+
+
+
+### Visulaise BIC Model
+
+```{r}
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_Mclust <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_Mclust[valid_indices] <- Opt_Mclust_clusters
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_Mclust)
+
+
+cluster_matrix_Mclust <- matrix(final_cluster_assignments_Mclust, nrow = 83, ncol = 86, byrow = TRUE)
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "red",             # For 10
+  "green",           # For 11
+  "yellow",          # For 12
+  "blue",            # For 13
+  "purple"           # For 14
+)
+
+
+cluster_matrix_Mclust_image = image(cluster_matrix_Mclust[,nrow(cluster_matrix_Mclust):1], col = cluster_colors, main = "Mclust Clustering Results (EEE, G = 4)", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "Mclust_ICL_BIC.png")
+
+cluster_matrix_Mclust_image = image(cluster_matrix_Mclust[,nrow(cluster_matrix_Mclust):1], col = cluster_colors, main = "Mclust Clustering Results (EEE, G = 4)", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+
+
+
+
+```
+
+
+# MFA (using 'CCU' from PGMM)
+
+
+```{r}
+
+### Loading libraries and data
+library(pgmm)
+
+res.mfa = pgmmEM(filtered_matrix,rG=1:9, rq=1:9, modelSubset='CCU', zstart = 2, seed = 123)
+
+# Selecting the number of factors by model selection with BIC
+res.mfa = pgmmEM(filtered_matrix,rG=1:9, rq=1:9, modelSubset='CCU', zstart = 2, seed = 123)
+plot (1:8, res.mfa$bic$CCU ,type='b',xlab='Nb of factors ',ylab='BIC')
+
+res.mfa$map
+
+plot1 = resMFA$Clust$last.z #Cluster assignments
+
+# Selecting the number of factors by model selection with ICL
+res.mfa2 = pgmmEM(filtered_matrix,rG=2:10, rq=1:8, modelSubset='CCU', zstart = 2, seed = 123, icl = TRUE)
+plot (1:8, res.mfa2$icl$CCU ,type='b',xlab='Nb of factors ',ylab='ICL')
+
+res.mfa2$map
+
+plot2 = resMFA2$Clust$last.z #Cluster assignments
+
+```
+
+## Visualisation
+
+```{r}
+cluster_matrix_MFA <- matrix(plot1, nrow = 83, ncol = 86, byrow = TRUE)
+
+cluster_matrix_MFA <- t(cluster_matrix_MFA)
+
+cluster_colors <- rainbow(k)
+
+# Visualize clustering results using image
+image(t(cluster_matrix_MFA), col = cluster_colors, main = "MFA Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "mfa_clustering.png")
+
+# Visualize clustering results using image
+image(t(cluster_matrix_MFA), col = cluster_colors, main = "MFA Clustering Results", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+
+```
+
+
+# PGMM (Sonic) z-start = 2 for k-means + Visualisation
+
+```{r}
+#q=5 data 'UUU'
+load('PGMM_fit5S_UUU.RData')
+PGMM_fit5S_UUU$bic
+
+# Extract the cluster assignments
+cluster_assignmentsPGMM5S <- PGMM_fit5S_UUU$map
+
+# Recombine
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_PGMM5S <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_PGMM5S[valid_indices] <- cluster_assignmentsPGMM5S
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_PGMM5S)
+
+
+cluster_matrix_PGMM5S <- matrix(final_cluster_assignments_PGMM5S, nrow = 83, ncol = 86, byrow = TRUE)
+
+
+cluster_colors <- c(
+  "black",
+  "blue",# For 1
+  "orange",             # For 10
+  "green",           # For 11
+  "purple",          # For 12
+  "red",            # For 13
+  "yellow"           # For 14
+)
+
+
+cluster_matrix_PGMM5S_image = image(cluster_matrix_PGMM5S[,nrow(cluster_matrix_PGMM5S):1], col = cluster_colors, main = "PGMM Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "PGMM_clustering.png")
+
+cluster_matrix_HDDC_image = image(cluster_matrix_PGMM5S[,nrow(cluster_matrix_PGMM5S):1], col = cluster_colors, axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+
+
+```
+
+# HDclassif: High Dimensional GMM
+
+HDDC(unsupervised) for High-dimensional data from HDclassif package 
+
+```{r}
+# Clustering with HDDC (HD-ready)
+install.packages('HDclassif')
+library(HDclassif)
+
+res.hddc = hddc(filtered_matrix, model="ALL", K = 1:9, mc.cores = 10)
+res.hddc$K #Number of clusters
+res.hddc$class #Vector of classes
+res.hddc$ICL #ICL value
+
+#Dimensions of each class
+res.hddc$d
+
+#2 Dimension
+```
+
+## Sonic Result
+
+```{r}
+
+load('res.hddc_S.RData') #Sonic result
+
+res.hddc_S$allCriteria
+
+res.hddc_S$all_results$ABKQKDK_9_0.2 # Rank 1 (K=9)
+
+res.hddc_S$all_results$AKJBKQKDK_6_0.2$class # Rank 3 (K=6*) 
+
+HDDC_Clusters = res.hddc_S$all_results$AKJBKQKDK_6_0.2$class
+
+res.hddc_S$all_results$AKJBKQKDK_6_0.2$d
+
+res.hddc_S$all_results$AKJBKQKDK_6_0.2$posterior
+
+
+```
+
+
+### Visualisation
+
+```{r}
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_HDDC <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_HDDC[valid_indices] <- HDDC_Clusters
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_HDDC)
+
+
+cluster_matrix_HDDC_Opt <- matrix(final_cluster_assignments_HDDC, nrow = 83, ncol = 86, byrow = TRUE)
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "yellow",             # For 10
+  "green",           # For 11
+  "purple",          # For 12
+  "blue",            # For 13
+  "red"           # For 14
+)
+
+cluster_matrix_HDDC_image = image(cluster_matrix_HDDC_Opt[,nrow(cluster_matrix_HDDC_Opt):1], col = cluster_colors, main = "HDDC Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "HDDC_clustering.png")
+
+cluster_matrix_HDDC_image = image(cluster_matrix_HDDC_Opt[,nrow(cluster_matrix_HDDC_Opt):1], col = cluster_colors, main = "", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+
+```
+
+
+# MIFA
+
+```{r}
+simMIFA  <- mcmc_IMIFA(filtered_matrix, method="MIFA", n.iters=10000, range.G=1:10, z.init="kmeans")
+
+# Save a single object to a file
+saveRDS(simMIFA, file = "simMIFA.rds")
+
+```
+
+```{r}
+resMFA  <- get_IMIFA_results(simMIFA) # Extract results
+clusters_IMIFA = resMFA$Clust$last.z # Cluster assignment
+
+```
+
+## Visualisation
+
+```{r}
+cluster_matrix_MFA <- matrix(clusters_IMIFA,nrow = 83, ncol = 86, byrow = TRUE)
+
+
+
+cluster_colors <- rainbow(k)
+
+# Visualize clustering results using image
+image(t(cluster_matrix_MFA), col = cluster_colors, main = "MFA Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "mfa_clustering.png")
+
+# Visualize clustering results using image
+image(cluster_matrix_MFA[,nrow(cluster_matrix_MFA):1], col = cluster_colors, main = "MFA Clustering Results", axes = FALSE)
+
+# Turn off the PNG device
+dev.off()
+
+```
+
+## Sonic Result
+
+```{r}
+load('simMIFA_Sonic.RData')
+
+resMIFA = get_IMIFA_results(simMIFA)
+
+resMIFA6 = get_IMIFA_results(simMIFA, G = 6, zlabels = filtered_gt_vec)
+
+
+MIFA_clusters = resMIFA6$Clust$MAP #MAP
+
+resMIFA6$GQ.results$Q #Factors
+
+
+```
+
+
+### Visualisation
+
+```{r}
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_MIFA <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_MIFA[valid_indices] <- MIFA_clusters
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_MIFA)
+
+
+cluster_matrix_MIFA_Opt <- matrix(final_cluster_assignments_MIFA, nrow = 83, ncol = 86, byrow = TRUE)
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "red",             # For 10
+  "green",           # For 11
+  "yellow",          # For 12
+  "blue",            # For 13
+  "purple"           # For 14
+)
+
+cluster_matrix_MIFA_image = image(cluster_matrix_MIFA_Opt[,nrow(cluster_matrix_MIFA_Opt):1], col = cluster_colors, main = "MIFA Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "MIFA_clustering.png")
+
+cluster_matrix_MIFA_image = image(cluster_matrix_MIFA_Opt[,nrow(cluster_matrix_MIFA_Opt):1], col = cluster_colors, main = "MIFA Clustering Results", axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+
+```
+
+
+
+# Blockcluster
+
+
+```{r}
+
+output = coclusterContinuous (filtered_matrix, nbcocluster =c(6,7)) #6 row clusters(pixels), and 7 column clusters (wavelengths) ((((7 is optimal for 6 row clusters!!!))))
+output@rowposteriorprob
+output@ICLvalue
+
+#rows
+clusters_coclusters = output@rowclass
+
+#columns
+output@colclass
+
+clusters_coclusters_incr = clusters_coclusters + 1
+
+```
+
+## Visualisation
+
+```{r}
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_cocluster <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_cocluster[valid_indices] <- clusters_coclusters_incr
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_cocluster)
+
+cluster_matrix_cocluster <- matrix(final_cluster_assignments_cocluster, nrow = 83, ncol = 86, byrow = TRUE)
+
+
+cluster_colors <- c(
+  "black",
+  "blue",# For 1
+  "orange",             # For 10
+  "green",           # For 11
+  "red",          # For 12
+  "yellow",            # For 13
+  "purple"           # For 14
+)
+
+
+cluster_matrix_BlockCluster_image = image(cluster_matrix_cocluster[,nrow(cluster_matrix_cocluster):1], col = cluster_colors, main = "BlockCluster Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "BlockCluster_clustering.png")
+
+cluster_matrix_BlockCluster_image = image(cluster_matrix_cocluster[,nrow(cluster_matrix_cocluster):1], col = cluster_colors, main = "", axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+## Mean Spectra clusters
+
+```{r}
+# Define cluster colors
+cluster_colors <- c(
+  "purple",    # For 1
+  "yellow",    # For 2
+  "orange",    # For 3
+  "green",     # For 4
+  "blue",      # For 5
+  "red"        # For 6
+)
+
+# Number of clusters
+num_clusters <- length(unique(clusters_coclusters_incr))
+
+# Calculate mean spectra for each cluster
+mean_spectra <- t(sapply(1:num_clusters, function(cluster) {
+  colMeans(filtered_matrix[clusters_coclusters_incr == cluster, ])
+}))
+
+# Determine the range of y-axis for zooming out
+y_range <- range(mean_spectra)
+
+# Increase the range by 10% for zooming out
+y_zoom_out <- (y_range[2] - y_range[1]) * 0.1
+y_limits <- c(y_range[1] - y_zoom_out, y_range[2] + y_zoom_out)
+
+# Save the plot as a PNG file
+png(filename = "BlockCluster_6x7_mean.png")
+
+# Plot the mean spectra for each cluster
+plot(1:ncol(filtered_matrix), mean_spectra[1, ], type = 'l', col = cluster_colors[1], 
+     xlab = expression(paste('Wavelength (cm'^'-1',')')), ylab = 'Intensity', 
+     main = 'Mean Spectra Coloured by Cluster',
+     ylim = y_limits, lwd = 2)  # Set initial line width to 2
+
+for (i in 2:num_clusters) {
+  lines(1:ncol(filtered_matrix), mean_spectra[i, ], col = cluster_colors[i], lwd = 2)  # Set line width to 2
+}
+
+dev.off()
+```
+
+
+## Column clusters visualised
+
+```{r}
+# Define cluster colors
+cluster_colors <- c(
+  "purple",    # For 1
+  "yellow",    # For 2
+  "orange",    # For 3
+  "green",     # For 4
+  "blue",      # For 5
+  "red"        # For 6
+)
+
+# Number of clusters
+num_clusters <- length(unique(clusters_coclusters_incr))
+
+# Calculate mean spectra for each cluster
+mean_spectra <- t(sapply(1:num_clusters, function(cluster) {
+  colMeans(filtered_matrix[clusters_coclusters_incr == cluster, ])
+}))
+
+# Create a sequence for x-axis
+x_seq <- 1:ncol(filtered_matrix)
+
+# Adjust colclass by adding 1
+adjusted_colclass <- output@colclass + 1
+
+# Loop through each unique value in the adjusted vector (1 to 7)
+for (cluster_value in 1:7) {
+  # Identify the columns corresponding to the current cluster
+  cluster_columns <- which(adjusted_colclass == cluster_value)
+  
+  # Determine the range of y-axis for zooming out
+  y_range <- range(mean_spectra[, cluster_columns], na.rm = TRUE)
+  
+  # Increase the range by 10% for zooming out
+  y_zoom_out <- (y_range[2] - y_range[1]) * 0.1
+  y_limits <- c(y_range[1] - y_zoom_out, y_range[2] + y_zoom_out)
+  
+  # Save the plot as a PNG file
+  png(filename = paste0("MeanSpectra_Cluster_", cluster_value, ".png"))
+  
+  # Create a new plot for the current cluster
+  plot(x_seq, mean_spectra[1, ], type = 'n', col = cluster_colors[1], 
+       xlab = expression(paste('Wavelength (cm'^'-1',')')), ylab = 'Mean Intensity', 
+       main = paste('Mean Spectra for Columns in Cluster', cluster_value),
+       ylim = y_limits)
+  
+  for (i in 1:num_clusters) {
+    # Create a mask for columns not in the current cluster
+    masked_mean_spectra <- mean_spectra[i, ]
+    masked_mean_spectra[adjusted_colclass != cluster_value] <- NA
+    
+    # Plot the masked mean spectra for each cluster
+    lines(x_seq, masked_mean_spectra, col = cluster_colors[i], lwd = 2, type = 'l', na.rm = TRUE)
+  }
+  
+  # Close the PNG device
+  dev.off()
+}
+
+```
+
+
+# Adjusted Rand Index
+
+```{r}
+# Hierarchical Clustering (Single)
+adj.rand.index(CutDend_s, filtered_gt_vec)
+
+# Hierarchical Clustering (Average)
+adj.rand.index(CutDend_av, filtered_gt_vec)
+
+# Hierarchical Clustering (Complete)
+adj.rand.index(CutDend_c, filtered_gt_vec)
+
+# K-means
+adj.rand.index(kmeans_result$cluster, filtered_gt_vec)
+
+# Mclust G = 6 'EEE'
+adj.rand.index(MclustFinal$classification, filtered_gt_vec)
+
+# Blockcluster
+adj.rand.index(clusters_coclusters_incr, filtered_gt_vec)
+
+# HDDC
+adj.rand.index(HDDC_Clusters, filtered_gt_vec)
+
+# MIFA
+adj.rand.index(MIFA_clusters, filtered_gt_vec)
+
+# Optimal PGMM 5S (q=5, g=6, 4 models, optimal is 'UUU')
+adj.rand.index(cluster_assignmentsPGMM5S, filtered_gt_vec)
+
+
+```
+
+# Deterministic vs. Probabilistic (Co-clustering)
+
+## Create vector
+
+```{r}
+output@rowposteriorprob
+
+# Calculate the maximum posterior probability for each row
+max_probs <- apply(output@rowposteriorprob, 1, max)
+
+# Calculate the uncertainty (1 - maximum posterior probability)
+uncertainty_vector <- 1 - max_probs
+
+# Print the uncertainty vector
+print(uncertainty_vector)
+
+
+```
+
+## Visualize
+
+```{r}
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_coclusterUncert. <- gt_vec_1 #Only use this vector for uncertainity plot
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_coclusterUncert.[valid_indices] <- uncertainty_vector
+
+
+cluster_matrix_coclusterUncert. <- matrix(final_cluster_assignments_coclusterUncert., nrow = 83, ncol = 86, byrow = TRUE)
+
+color_gradient <- gray.colors(100, start = 1, end = 0) 
+
+cluster_matrix_Uncert. = image(cluster_matrix_coclusterUncert.[,nrow(cluster_matrix_coclusterUncert.):1], col = color_gradient, main = " Co-cluster Clustering Uncertainty", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "BlockCluster_clustering_uncertainty.png")
+
+cluster_matrix_Uncert. = image(cluster_matrix_coclusterUncert.[,nrow(cluster_matrix_coclusterUncert.):1], col = color_gradient, main = "", axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+
+```
+
+
+## Distribution
+
+```{r}
+hist(uncertainty_vector, 
+     breaks = 500,                # Number of bins
+     col = "gray",               # Color of the bars
+     main = "Distribution of Uncertainty Values", 
+     xlab = "Uncertainty", 
+     ylab = "Frequency")
+
+hist(uncertainty_vector[uncertainty_vector < 0.01], 
+     breaks = 100, 
+     col = "gray", 
+     main = "Zoomed Histogram of Uncertainty Values", 
+     xlab = "Uncertainty (< 0.005)", 
+     ylab = "Frequency")
+
+# Boxplot for the entire uncertainty vector
+boxplot(uncertainty_vector,
+        main = "Boxplot of Uncertainty Values",
+        ylab = "Uncertainty",
+        col = "lightgray",
+        border = "black")
+
+# Sample data for uncertainty_vector
+# uncertainty_vector <- c(...) # Your actual data
+
+# Define custom bin edges
+bin_edges_custom <- c(0, 0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1)
+
+# Categorize the uncertainty values into custom bins
+binned_data_custom <- cut(uncertainty_vector, breaks = bin_edges_custom, include.lowest = TRUE, right = FALSE)
+
+# Create a summary table of the counts for each bin
+summary_table_custom <- table(binned_data_custom)
+
+# Print the summary table
+print(summary_table_custom)
+
+# Convert the summary table to a data frame for better readability
+summary_df_custom <- as.data.frame(summary_table_custom)
+names(summary_df_custom) <- c("Range", "Count")
+
+# Print the data frame
+print(summary_df_custom)
+```
+
+## Spectral Analysis: Average cluster spectra
+
+```{r}
+# Identify the pixel with maximum uncertainity
+
+max_uncertainty_index <- which.max(uncertainty_vector) #3813
+
+# Extract the value at this index from the uncertainty vector
+max_uncertainty_value <- uncertainty_vector[max_uncertainty_index]
+
+#Identify label given 
+
+output@rowclass[max_uncertainty_index] #Cluster 4
+```
+
+
+
+```{r}
+# Extract indices where the value is 4
+indices_equal_to_4 <- which(output@rowclass == 4)
+
+
+# Extract rows from filtered_matrix using the indices
+filtered_rows <- filtered_matrix[indices_equal_to_4, ]
+
+# Compute column means
+column_means <- colMeans(filtered_rows)
+
+# Print column means
+print(column_means)
+
+# Create a sequence for the x-axis representing the index of each data point
+x <- seq_along(column_means)
+
+# Plot the column means
+plot(x, column_means, type = "l", col = "blue",
+     xlab = "Index", ylab = "Mean Intensity",
+     main = "Column Means of Filtered Rows")
+```
+
+
+## Spectral Analysis: Most uncertain pixel clustering
+
+```{r}
+# Extract spectra
+corresponding_row <- filtered_matrix[max_uncertainty_index, ]
+
+# Fix labels
+# Define the original wavelength sequence before any removal
+original_wavelengths <- 1:204
+
+# Match the remaining wavelengths to the corresponding_row labels
+names(corresponding_row) <- paste0(original_wavelengths)
+
+# Print the updated corresponding_row with true wavelength labels
+print(corresponding_row)
+
+# Create a sequence for the x-axis representing the index of each data point
+x <- seq_along(corresponding_row)
+x_means <- seq_along(column_means)
+
+# Plot the spectra with adjusted parameters for maximum visibility
+plot(x, corresponding_row, type = "l", col = "red", lwd = 4,  # Thicker line
+     xlab = "Index", ylab = "Intensity",
+     main = "Spectral Plot",
+     ylim = range(c(corresponding_row, column_means)),  # Ensure y-axis covers both spectra and means
+     cex.lab = 2.5,   # Larger font size for axis labels
+     cex.main = 3.5,    # Larger font size for the title
+     cex.axis = 2.0)  # Larger font size for axis tick labels
+
+# Overlay the column means with adjusted parameters for maximum visibility
+lines(x_means, column_means, col = "cyan", lwd = 4)  # Thicker line
+
+```
+
+
+Visualise here:
+```{r}
+
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_cocluster_cyan <- gt_vec
+
+clusters_coclusters_incr_cyan = clusters_coclusters_incr
+
+# Set values from index 3800 to 3826 to 8
+clusters_coclusters_incr_cyan[3813] <- 7
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_cocluster_cyan[valid_indices] <- clusters_coclusters_incr_cyan
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_cocluster_cyan)
+
+cluster_matrix_cocluster_cyan <- matrix(final_cluster_assignments_cocluster_cyan, nrow = 83, ncol = 86, byrow = TRUE)
+
+
+cluster_colors <- c(
+  "black",
+  "blue",# For 1
+  "orange",             # For 10
+  "green",           # For 11
+  "red",          # For 12
+  "yellow",            # For 13
+  "purple",
+  "cyan"# For 14
+)
+
+cluster_matrix_BlockCluster_image_cyan = image(cluster_matrix_cocluster_cyan[,nrow(cluster_matrix_cocluster_cyan):1], col = cluster_colors, main = "BlockCluster Clustering Results", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "BlockCluster_clustering_cyan_uncert.png")
+
+cluster_matrix_BlockCluster_image_cyan = image(cluster_matrix_cocluster_cyan[,nrow(cluster_matrix_cocluster_cyan):1], col = cluster_colors, main = "", axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+```
+
+
+
+# ICL-BIC Function
+
+Below you can find the code for the development of the ICL-BIC criterion used with the G-LBM
+
+
+## First Term (Complete Data Log-likelihood)
+
+The following is only for computing the first term for a specific output, not for all.
+
+### Binary Column Partition Matrix
+```{r}
+col_class = (output@colclass)+1
+col_class_matrix = as.matrix(col_class, ncol = 1) #Don't change ncol here
+
+# Get the number of rows in the original matrix
+n_rows <- nrow(col_class_matrix)
+
+# Initialize the new binary matrix with zeros
+binary_matrix_cols <- matrix(0, nrow = n_rows, ncol = 5) #Set ncol to number of column(spectral) clusters
+
+# Populate the binary matrix
+for (i in 1:n_rows) {
+  value <- col_class_matrix[i, 1]
+  binary_matrix_cols[i, value] <- 1
+}
+
+# Print the binary matrix
+print(binary_matrix_cols)
+
+
+```
+
+
+### Binary Row Partition Matrix
+```{r}
+row_class = (output@rowclass)+1
+row_class_matrix = as.matrix(row_class, ncol = 1) #Don't change
+
+# Get the number of rows in the original matrix
+n_rows <- nrow(row_class_matrix)
+
+# Initialize the new binary matrix with zeros
+binary_matrix_rows <- matrix(0, nrow = n_rows, ncol = 5) #Change ncol suitably
+
+# Populate the binary matrix
+for (i in 1:n_rows) {
+  value <- row_class_matrix[i, 1]
+  binary_matrix_rows[i, value] <- 1
+}
+
+# Print the binary matrix
+print(binary_matrix_rows)
+```
+
+Now to get the p(), which is the density or probability of each entry under their respective clustering:
+
+### State terms
+
+```{r}
+row_prob = output@rowposteriorprob
+
+col_prob = output@colposteriorprob
+
+alpha = output@rowproportions
+
+beta = output@columnproportions
+
+v_hat = binary_matrix_rows
+  
+w_hat = binary_matrix_cols
+
+mu_hat <- output@classmean
+
+sigma2_hat <- output@classvariance
+
+x <- emulsion_data
+```
+
+### First Term Final Combined Function:
+
+```{r}
+compute_total_sum <- function(v_hat, w_hat, row_prob, col_prob, alpha, beta, mu_hat, sigma2_hat, x) {
+  # Get the dimensions
+  n <- nrow(v_hat)
+  K <- ncol(v_hat)
+  d <- nrow(w_hat)
+  L <- ncol(w_hat)
+
+  # Initialize the total sum
+  total_sum <- 0
+  
+  # First sum: \sum_{i k} \hat{v}_{i k} \log \hat{\alpha}_k
+  sum_vk_log_alpha <- 0
+  for (i in 1:n) {
+    for (k in 1:K) {
+      sum_vk_log_alpha <- sum_vk_log_alpha + v_hat[i, k] * log(alpha[k])
+    }
+  }
+  
+  # Second sum: \sum_{j \ell} \hat{w}_{j \ell} \log \hat{\beta}_{\ell}
+  sum_wj_log_beta <- 0
+  for (j in 1:d) {
+    for (ell in 1:L) {
+      sum_wj_log_beta <- sum_wj_log_beta + w_hat[j, ell] * log(beta[ell])
+    }
+  }
+  
+  # Third sum: \sum_{i j k \ell} \hat{v}_{i k} \hat{w}_{j \ell} \log \mathbf{p}\left(x_{i j} ; \hat{\mu}_{k \ell}, \hat{\sigma}_{k \ell}^2\right)
+  for (i in 1:n) {
+    for (j in 1:d) {
+      log_likelihood_cell <- 0
+      for (k in 1:K) {
+        for (ell in 1:L) {
+          # Compute the Gaussian log probability
+          log_prob <- dnorm(x[i, j], mean = mu_hat[k, ell], sd = sqrt(sigma2_hat[k, ell]), log = TRUE)
+          
+          # Multiply by the cluster membership indicators
+          log_likelihood_cell <- log_likelihood_cell + row_prob[i, k] * col_prob[j, ell] * log_prob
+        }
+      }
+      # Add to the total log likelihood sum
+      total_sum <- total_sum + log_likelihood_cell
+    }
+  }
+  
+  # Add the first two terms to the total sum
+  total_sum <- total_sum + sum_vk_log_alpha + sum_wj_log_beta
+  
+  return(total_sum)
+}
+
+
+```
+
+Running function for one:
+
+```{r}
+First_term = compute_total_sum(v_hat = v_hat, w_hat = w_hat, row_prob = row_prob, col_prob = col_prob, alpha = alpha, beta = beta)
+print(First_term)
+
+```
+### Iterate through all combos (first term): 
+
+```{r}
+### Iterate through all combos (first term):
+FirstTerm <- matrix(NA, nrow = 10, ncol = 10)
+row_cluster_sizes <- 1:10
+col_cluster_sizes <- 1:10
+
+for (row_clusters in row_cluster_sizes) {
+  
+  # Flag to track if any failures occur for current row_clusters
+  row_failed <- FALSE
+  
+  for (col_clusters in col_cluster_sizes) {
+    output <- try(coclusterContinuous(emulsion_data, nbcocluster = c(row_clusters, col_clusters)), silent = TRUE)
+    
+    if (inherits(output, "try-error") || is.null(output) || nrow(output@classmean) == 0) {
+      cat("Co-Clustering Failed for row_clusters =", row_clusters, "and col_clusters =", col_clusters, "\n")
+      row_failed <- TRUE
+      next  # Skip to next iteration of the inner loop (col_cluster_sizes)
+    }
+    
+    # Extract necessary parameters
+    row_prob <- output@rowposteriorprob
+    col_prob <- output@colposteriorprob
+    alpha <- output@rowproportions
+    beta <- output@columnproportions
+    
+    # Compute binary matrices v_hat and w_hat
+    col_class <- (output@colclass) + 1
+    col_class_matrix <- as.matrix(col_class, ncol = 1)
+    n_rows <- nrow(col_class_matrix)
+    binary_matrix_cols <- matrix(0, nrow = n_rows, ncol = col_clusters)
+    
+    for (i in 1:n_rows) {
+      value <- col_class_matrix[i, 1]
+      binary_matrix_cols[i, value] <- 1
+    }
+    
+    row_class <- (output@rowclass) + 1
+    row_class_matrix <- as.matrix(row_class, ncol = 1)
+    n_rows <- nrow(row_class_matrix)
+    binary_matrix_rows <- matrix(0, nrow = n_rows, ncol = row_clusters)
+    
+    for (i in 1:n_rows) {
+      value <- row_class_matrix[i, 1]
+      binary_matrix_rows[i, value] <- 1
+    }
+    
+    # Extract mu_hat and sigma2_hat from output
+    mu_hat <- output@classmean
+    sigma2_hat <- output@classvariance
+    
+    # Assuming x is defined as emulsion_data
+    x <- emulsion_data
+    
+    # Compute total sum using function
+    total_sum <- compute_total_sum(binary_matrix_rows, binary_matrix_cols, row_prob, col_prob, alpha, beta, mu_hat, sigma2_hat, x)
+    
+    # Store the result
+    FirstTerm[row_clusters, col_clusters] <- total_sum
+  }
+  
+  # Check if any failures occurred for the current row_clusters
+  if (row_failed) {
+    cat("Skipping row_clusters =", row_clusters, "due to failure\n")
+    next  # Skip to next iteration of the outer loop (row_cluster_sizes)
+  }
+}
+
+
+View(FirstTerm)
+
+```
+
+
+Now to calculate the second term with the equation given in Jacques paper:
+
+## Second Term
+
+
+```{r}
+
+# Set matrix size
+n <- 3600
+d <- 125
+
+# Initialize an empty matrix to store results
+SecondTerm <- matrix(NA, nrow = 10, ncol = 10)
+
+# Loop through each combination of K and L
+for (K in 1:10) {
+  for (L in 1:10) {
+    # Compute the expression
+    expression_result <- ((K - 1) / 2 * log(n)) - ((L - 1) / 2 * log(d)) - ((K * L) * log(n * d))
+    
+    # Store the result in the matrix
+    SecondTerm[K, L] <- expression_result
+  }
+}
+
+# Print or inspect the results
+print(SecondTerm)
+
+
+saveRDS(SecondTerm, file = "BIC_Matrix.rds")
+```
+
+## Final Calculation ***
+
+Incorporate first term and second term below.
+
+```{r}
+ICLBIC <- FirstTerm - SecondTerm
+
+#Print or access the difference matrix
+
+print(ICLBIC)
+
+```
+
+Best value search (Largest):
+
+```{r}
+# Find the optimal (least negative) log-likelihood value in the results matrix
+best_ICL_BIC <- max(ICLBIC, na.rm = TRUE)
+
+# Find the position of this optimal log-likelihood value
+best_position <- which(ICLBIC == best_ICL_BIC, arr.ind = TRUE)
+
+# Extract the row and column indices
+best_row <- best_position[1, 1]
+best_col <- best_position[1, 2]
+
+# Print the results
+cat("Best log-likelihood value:", best_ICL_BIC, "\n")
+cat("Located at row:", best_row, "and column:", best_col, "\n")
+```
+
+
+# Novel algorithm
+
+Below I have all of the code required for the algorithm. I will write a brief tutorial at the end.
+
+## Define xlog
+
+
+```{r}
+xlog <- function (x) 
+{
+    xlog1d <- function(xi) if (xi == 0) 
+        0
+    else (xi * log(xi))
+    if (is.null(dim(x))) {
+        return(sapply(x, xlog1d))
+    }
+    else {
+        return(matrix(sapply(x, xlog1d), dim(x)))
+    }
+}
+```
+
+## Algorithm
+
+Function to perform merging of co-clustering output, by rows and columns 
+
+```{r}
+combo <- function(data, CoClustOutput, n = nrow(data), d = ncol(data)) {
+    # Initialize structures for row clusters
+    K_row_initial <- CoClustOutput@nbcocluster[1]
+    combiRow <- list()
+    combiRow[[K_row_initial]] <- diag(K_row_initial)
+    tauRow <- list()
+    tauRow[[K_row_initial]] <- CoClustOutput@rowposteriorprob
+    classifRow <- list()
+    classifRow[[K_row_initial]] <- map(tauRow[[K_row_initial]])
+    
+    # Initialize structures for column clusters
+    K_col_initial <- CoClustOutput@nbcocluster[2]
+    combiCol <- list()
+    combiCol[[K_col_initial]] <- diag(K_col_initial)
+    tauCol <- list()
+    tauCol[[K_col_initial]] <- CoClustOutput@colposteriorprob
+    classifCol <- list()
+    classifCol[[K_col_initial]] <- map(tauCol[[K_col_initial]])
+    
+    # Initialize current cluster labels
+    currRowLabels <- 1:K_row_initial
+    currColLabels <- 1:K_col_initial
+    
+    # Initialize list to record steps
+    steps <- list()
+    
+    # Record initial labels
+    initial_labels <- list(
+        row = currRowLabels,
+        col = currColLabels
+    )
+    
+    # Iteratively combine rows and columns based on maximum entropy decrease
+    step_count <- 1
+    while (CoClustOutput@nbcocluster[1] > 1 || CoClustOutput@nbcocluster[2] > 1) {
+        max_dEntRow <- -Inf
+        max_dEntCol <- -Inf
+        l1_row <- l2_row <- l3_col <- l4_col <- NA
+        N_combined <- NA
+        
+        # Calculate entropy changes for row clustering
+        if (CoClustOutput@nbcocluster[1] > 1) {
+            K <- CoClustOutput@nbcocluster[1]
+            dEntRow <- matrix(0, nrow = K - 1, ncol = K)
+            preCombiTauRow <- tauRow[[K]]
+            for (l1 in 1:(K - 1)) {
+                for (l2 in (l1 + 1):K) {
+                    postCombiTauRow <- t(combMat(K, l1, l2) %*% t(preCombiTauRow))
+                    dEntRow[l1, l2] <- sum(xlog(postCombiTauRow[, l1])) - 
+                                       sum(xlog(preCombiTauRow[, l1]) + xlog(preCombiTauRow[, l2]))
+                }
+            }
+            max_dEntRow <- max(dEntRow)
+            l1_row <- which(dEntRow == max_dEntRow, arr.ind = TRUE)[1]
+            l2_row <- which(dEntRow == max_dEntRow, arr.ind = TRUE)[2]
+            
+            # Calculate the number of observations combined
+            N_combined <- sum(classifRow[[K]] == l1_row | classifRow[[K]] == l2_row)
+        }
+        
+        # Calculate entropy changes for column clustering
+        if (CoClustOutput@nbcocluster[2] > 1) {
+            K <- CoClustOutput@nbcocluster[2]
+            dEntCol <- matrix(0, nrow = K - 1, ncol = K)
+            preCombiTauCol <- tauCol[[K]]
+            for (l3 in 1:(K - 1)) {
+                for (l4 in (l3 + 1):K) {
+                    postCombiTauCol <- t(combMat(K, l3, l4) %*% t(preCombiTauCol))
+                    dEntCol[l3, l4] <- sum(xlog(postCombiTauCol[, l3])) - 
+                                       sum(xlog(preCombiTauCol[, l3]) + xlog(preCombiTauCol[, l4]))
+                }
+            }
+            max_dEntCol <- max(dEntCol)
+            l3_col <- which(dEntCol == max_dEntCol, arr.ind = TRUE)[1]
+            l4_col <- which(dEntCol == max_dEntCol, arr.ind = TRUE)[2]
+            
+            # Calculate the number of observations combined using previous step classification
+            N_combined <- sum(classifCol[[K]] == l3_col | classifCol[[K]] == l4_col)
+        }
+        
+        # Determine whether to merge row or column clusters based on maximum entropy decrease
+        if (max_dEntRow >= max_dEntCol && CoClustOutput@nbcocluster[1] > 1) {
+            # Merge row clusters
+            K <- CoClustOutput@nbcocluster[1]
+            combiRow[[K - 1]] <- combMat(K, l1_row, l2_row)
+            tauRow[[K - 1]] <- t(combiRow[[K - 1]] %*% t(tauRow[[K]]))
+            classifRow[[K - 1]] <- map(tauRow[[K - 1]])
+            CoClustOutput@nbcocluster[1] <- K - 1
+            
+            # Update current row labels
+            currRowLabels <- combiRow[[K - 1]] %*% currRowLabels
+            currRowLabels <- as.integer(factor(currRowLabels))  # Ensure labels are integers
+            
+            # Record step information
+            steps[[step_count]] <- list(
+                type = "Row",
+                step = step_count,
+                l1 = l1_row,
+                l2 = l2_row,
+                max_dEnt = max_dEntRow,
+                N_combined = sum(classifRow[[K]] == l1_row | classifRow[[K]] == l2_row),
+                initial_labels = initial_labels$row,
+                current_labels = currRowLabels
+            )
+            
+            step_count <- step_count + 1
+            
+            # Update initial labels for future steps
+            initial_labels$row <- currRowLabels
+        } else if (CoClustOutput@nbcocluster[2] > 1) {
+            # Merge column clusters
+            K <- CoClustOutput@nbcocluster[2]
+            combiCol[[K - 1]] <- combMat(K, l3_col, l4_col)
+            tauCol[[K - 1]] <- t(combiCol[[K - 1]] %*% t(tauCol[[K]]))
+            classifCol[[K - 1]] <- map(tauCol[[K - 1]])
+            CoClustOutput@nbcocluster[2] <- K - 1
+            
+            # Update current column labels
+            currColLabels <- combiCol[[K - 1]] %*% currColLabels
+            currColLabels <- as.integer(factor(currColLabels))  # Ensure labels are integers
+            
+            # Record step information
+            steps[[step_count]] <- list(
+                type = "Column",
+                step = step_count,
+                l3 = l3_col,
+                l4 = l4_col,
+                max_dEnt = max_dEntCol,
+                N_combined = sum(classifCol[[K]] == l3_col | classifCol[[K]] == l4_col),
+                initial_labels = initial_labels$col,
+                current_labels = currColLabels
+            )
+            
+            step_count <- step_count + 1
+            
+            # Update initial labels for future steps
+            initial_labels$col <- currColLabels
+        }
+    }
+
+    output <- list(
+        classificationRow = classifRow,
+        combiRow = combiRow,
+        combizRow = tauRow,
+        classificationCol = classifCol,
+        combiCol = combiCol,
+        combizCol = tauCol,
+        CoClustOutput = CoClustOutput,
+        steps = steps  # Add steps to the output
+    )
+    output$title <- "Combining row and column clusters for co-clustering"  # Add the title here
+    class(output) <- "clustCombo"
+    return(output)
+}
+
+
+```
+
+
+## Summary method
+
+```{r}
+summary.clustCombo <- function(x, digits = getOption("digits"), ...) {
+    # Print the title with border lines
+    cat(rep("-", nchar(x$title)), "\n", sep = "")
+    cat(x$title, "\n")
+    cat(rep("-", nchar(x$title)), "\n", sep = "")
+    
+    # Placeholder for the model name
+    #cat("\nCoClust model name: temporary\n")
+    cat("Number of row clusters:", length(x$combiRow), "\n")
+    cat("Number of column clusters:", length(x$combiCol), "\n")
+    cat("\nCombining steps:\n\n")
+    
+    # Print row cluster merging steps
+    cat("Row Combining Steps:\n")
+    cat("  Step | Classes combined at this step | Class labels after this step\n")
+    cat("-------|-------------------------------|-----------------------------\n")
+    currRow <- 1:length(x$combiRow)
+    cat("   0   |              ---              | ", sprintf(fmt = "%d ", currRow), "\n", sep = "")
+    for (K in 1:(length(x$combiRow) - 1)) {
+        Kp = length(x$combiRow) - K + 1
+        l1 = which(!x$combiRow[[Kp - 1]] %*% rep(1, Kp) == 1)
+        l2 = (x$combiRow[[Kp - 1]] %*% currRow)[l1] - currRow[l1]
+        nc1 = floor((7 - nchar(as.character(K)))/2)
+        nc2 = (7 - nchar(as.character(K))) - nc1
+        nc3 = floor((33 - nchar(paste(as.character(c(l1)), " & ", as.character(l2))))/2)
+        nc4 = 33 - nchar(paste(as.character(c(l1)), " & ", as.character(l2))) - nc3
+        currRow <- x$combiRow[[Kp - 1]] %*% currRow - l2 * c(rep(0, (l1 - 1)), 1, rep(0, (Kp - 1 - l1)))
+        cat(rep(" ", nc1), as.character(K), rep(" ", nc2), "|", 
+            rep(" ", nc3), as.character(l1), " & ", as.character(l2), 
+            rep(" ", nc4), "| ", sprintf(fmt = "%d ", currRow), "\n", sep = "")
+    }
+    
+    # Print column cluster merging steps
+    cat("\nColumn Combining Steps:\n")
+    cat("  Step | Classes combined at this step | Class labels after this step\n")
+    cat("-------|-------------------------------|-----------------------------\n")
+    currCol <- 1:length(x$combiCol)
+    cat("   0   |              ---              | ", sprintf(fmt = "%d ", currCol), "\n", sep = "")
+    for (K in 1:(length(x$combiCol) - 1)) {
+        Kp = length(x$combiCol) - K + 1
+        l1 = which(!x$combiCol[[Kp - 1]] %*% rep(1, Kp) == 1)
+        l2 = (x$combiCol[[Kp - 1]] %*% currCol)[l1] - currCol[l1]
+        nc1 = floor((7 - nchar(as.character(K)))/2)
+        nc2 = (7 - nchar(as.character(K))) - nc1
+        nc3 = floor((33 - nchar(paste(as.character(c(l1)), " & ", as.character(l2))))/2)
+        nc4 = 33 - nchar(paste(as.character(c(l1)), " & ", as.character(l2))) - nc3
+        currCol <- x$combiCol[[Kp - 1]] %*% currCol - l2 * c(rep(0, (l1 - 1)), 1, rep(0, (Kp - 1 - l1)))
+        cat(rep(" ", nc1), as.character(K), rep(" ", nc2), "|", 
+            rep(" ", nc3), as.character(l1), " & ", as.character(l2), 
+            rep(" ", nc4), "| ", sprintf(fmt = "%d ", currCol), "\n", sep = "")
+    }
+    
+    # Print additional step-by-step details
+    cat("\nStep-by-Step Details:\n")
+    cat("  Step | Type   | Classes Combined | Entropy Change\n")
+    cat("-------|--------|------------------|----------------\n")
+    
+    # Print step details from x$steps
+    for (step in seq_along(x$steps)) {
+        step_info <- x$steps[[step]]
+        entropy_change <- step_info$max_dEnt  # Assuming max_dEnt represents the entropy change
+        if (step_info$type == "Row") {
+            combined_classes <- sprintf("%d & %d", step_info$l1, step_info$l2)
+        } else if (step_info$type == "Column") {
+            combined_classes <- sprintf("%d & %d", step_info$l3, step_info$l4)
+        }
+        cat(sprintf("%4d   | %-6s | %16s | %15.10f\n", 
+                    step_info$step, 
+                    step_info$type, 
+                    combined_classes, 
+                    entropy_change))
+    }
+    
+    invisible()
+}
+
+```
+
+
+
+## Entropy Plot (Final)
+
+```{r}
+# Combined Function to Extract Steps, Compute, and Plot Entropy
+EntropyPlot <- function(object, cluster_type = c("Row", "Column")) {
+    # Extract steps from the object
+    steps <- object$steps
+    
+    # Ensure the cluster_type is valid
+    cluster_type <- match.arg(cluster_type)
+    
+    # Infer the initial number of clusters based on the cluster type
+    if (cluster_type == "Row") {
+        initial_clusters <- length(object$CoClustOutput@rowproportions)
+    } else {
+        initial_clusters <- length(object$CoClustOutput@columnproportions)
+    }
+    
+    # 1. Extract entropy values based on cluster type
+    step_data <- Filter(function(step) step$type == cluster_type, steps)
+    entropy_values <- sapply(step_data, function(step) step$max_dEnt)
+    
+    # 2. Compute cumulative entropy values from the end
+    cumulative_entropy_values <- rev(cumsum(rev(entropy_values)))
+    
+    # 3. Plot entropy vs. number of clusters
+    num_clusters <- seq(initial_clusters, 1)
+    
+    # Ensure we have the right number of clusters
+    if (length(cumulative_entropy_values) < initial_clusters) {
+        cumulative_entropy_values <- c(cumulative_entropy_values, rep(0, initial_clusters - length(cumulative_entropy_values)))
+    }
+    
+    # Plot
+    plot(num_clusters, cumulative_entropy_values, type = "b", 
+         xlab = "Number of Clusters", ylab = "Entropy", 
+         main = paste("Entropy Plot -", cluster_type),
+         col = "blue", pch = 19, ylim = c(0, max(cumulative_entropy_values, na.rm = TRUE)),
+         xlim = c(1, initial_clusters))  # Ensure x-axis starts from 1 to initial_clusters
+}
+
+# Save the plot as a PNG file
+png(filename = "EntropyPlotRow.png")
+# Example usage for 'Row' type
+EntropyPlot(AttemptCombo, cluster_type = "Row")
+dev.off()
+
+# Save the plot as a PNG file
+png(filename = "EntropyPlotCol.png")
+# Example usage for 'Column' type
+EntropyPlot(AttemptCombo, cluster_type = "Column")
+dev.off()
+
+
+```
+
+
+
+### Relative Entropy (Final)
+
+```{r}
+# Combined Function to Extract Steps, Compute, and Plot Normalized Entropy
+NormalizedEntropyPlot <- function(object, cluster_type = c("Row", "Column")) {
+    # Extract steps from the object
+    steps <- object$steps
+    
+    # Ensure the cluster_type is valid
+    cluster_type <- match.arg(cluster_type)
+    
+    # Infer the initial number of clusters based on the cluster type
+    if (cluster_type == "Row") {
+        initial_clusters <- length(object$CoClustOutput@rowproportions)
+    } else {
+        initial_clusters <- length(object$CoClustOutput@columnproportions)
+    }
+    
+    # 1. Extract relative entropy values based on cluster type
+    step_data <- Filter(function(step) step$type == cluster_type, steps)
+    entropy_values <- sapply(step_data, function(step) step$max_dEnt)
+    N_combined_values <- sapply(step_data, function(step) step$N_combined)
+    
+    # Compute relative entropy change
+    relative_entropy_values <- entropy_values / N_combined_values
+    
+    # 2. Compute cumulative relative entropy values from the end
+    cumulative_entropy_values <- rev(cumsum(rev(relative_entropy_values)))
+    
+    # 3. Plot relative entropy vs. number of clusters
+    num_clusters <- seq(initial_clusters, 1)
+    
+    # Ensure we have the right number of clusters
+    if (length(cumulative_entropy_values) < initial_clusters) {
+        cumulative_entropy_values <- c(cumulative_entropy_values, rep(0, initial_clusters - length(cumulative_entropy_values)))
+    }
+    
+    # Plot
+    plot(num_clusters, cumulative_entropy_values, type = "b", 
+         xlab = "Number of Clusters", ylab = "Normalized Entropy", 
+         main = paste("Normalized Entropy Plot -", cluster_type),
+         col = "blue", pch = 19, ylim = c(0, max(cumulative_entropy_values, na.rm = TRUE)),
+         xlim = c(1, initial_clusters))  # Ensure x-axis starts from 1 to initial_clusters
+}
+
+
+# Save the plot as a PNG file
+png(filename = "EntropyPlotNormRow.png")
+# Example usage for 'Row' type
+NormalizedEntropyPlot(AttemptCombo, cluster_type = "Row")
+dev.off()
+
+# Save the plot as a PNG file
+png(filename = "EntropyPlotNormCol.png")
+# Example usage for 'Column' type
+NormalizedEntropyPlot(AttemptCombo, cluster_type = "Column")
+dev.off()
+
+
+```
+
+
+
+
+# Short demonstration of merging algorithm for Salinas
+
+The output here is that from the co-clustering function from blockcluster package.
+
+```{r}
+output = coclusterContinuous (filtered_matrix, nbcocluster =c(8,8)) #Input data and state row and column cluster numbers
+
+# Run merging algorithm on output
+AttemptCombo = combo(CoClustOutput = output, data = filtered_matrix)
+
+# Summary function
+summary(AttemptCombo)
+
+
+# Plotting function for entropy
+
+png(filename = "EntropyPlotRow.png")
+## Example usage for 'Row' type
+EntropyPlot(AttemptCombo, cluster_type = "Row")
+
+# Save the plot as a PNG file
+png(filename = "EntropyPlotCol.png")
+## Example usage for 'Column' type
+EntropyPlot(AttemptCombo, cluster_type = "Column")
+dev.off()
+
+
+
+# Plotting function for normalised entropy
+
+
+# Example usage for 'Row' type
+NormalizedEntropyPlot(AttemptCombo, cluster_type = "Row")
+
+
+# Example usage for 'Column' type
+NormalizedEntropyPlot(AttemptCombo, cluster_type = "Column")
+
+
+```
+
+
+
+# Mean Spectra Merging Analysis
+
+```{r}
+PreMerge8Clusters = AttemptCombo$classificationRow[8]
+
+PostMerge6Clusters = AttemptCombo$classificationRow[6]
+
+PreMerge8Clusters = unlist(PreMerge8Clusters)
+
+PostMerge6Clusters = unlist(PostMerge6Clusters)
+
+# Post ARI
+
+adj.rand.index(PostMerge6Clusters, filtered_gt_vec)
+
+adj.rand.index(PreMerge8Clusters, filtered_gt_vec)
+
+```
+
+## Pre Vis.
+
+```{r}
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_PreMerge8 <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_PreMerge8[valid_indices] <- PreMerge8Clusters
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_PreMerge8)
+
+
+cluster_matrix_PreMerge8 <- matrix(final_cluster_assignments_PreMerge8, nrow = 83, ncol = 86, byrow = TRUE)
+
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "lightblue",             # For 10
+  "magenta",           # For 11
+  "green",          # For 12
+  "yellow",            # For 13
+  "blue",           # For 14
+  "red",
+  "purple"
+  )
+
+
+cluster_matrix_PreMerge8_image = image(cluster_matrix_PreMerge8[,nrow(cluster_matrix_PreMerge8):1], col = cluster_colors, main = "Initial 8 Clusters", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "PreMerge8_clustering.png")
+
+cluster_matrix_PreMerge8_image = image(cluster_matrix_PreMerge8[,nrow(cluster_matrix_PreMerge8):1], col = cluster_colors, main = "", axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+```
+
+## Post Vis.
+
+```{r}
+# Initialize a vector for the final cluster assignments
+final_cluster_assignments_PostMerge6 <- gt_vec
+
+# Assign the new cluster assignments to the appropriate positions
+final_cluster_assignments_PostMerge6[valid_indices] <- PostMerge6Clusters
+
+# Check the structure of the final_cluster_assignments
+str(final_cluster_assignments_PostMerge6)
+
+
+cluster_matrix_PostMerge6 <- matrix(final_cluster_assignments_PostMerge6, nrow = 83, ncol = 86, byrow = TRUE)
+
+cluster_colors <- c(
+  "black",
+  "orange",# For 1
+  "red",             # For 10
+  "green",           # For 11
+  "yellow",          # For 12
+  "blue",            # For 13
+  "purple"           # For 14
+)
+
+cluster_matrix_PostMerge6_image = image(cluster_matrix_PostMerge6[,nrow(cluster_matrix_PostMerge6):1], col = cluster_colors, main = "Post Merge 6 Clusters", axes = FALSE)
+
+
+# Save the plot as a PNG file
+png(filename = "PostMerge6_clustering.png")
+
+cluster_matrix_PostMerge6_image = image(cluster_matrix_PostMerge6[,nrow(cluster_matrix_PostMerge6):1], col = cluster_colors, main = "", axes = FALSE)
+
+
+# Turn off the PNG device
+dev.off()
+```
+
+# Mean Spectra Post Merge 
+
+```{r}
+
+# Save the plot as a PNG file
+png(filename = "PostMerge6_clustering_MeanSpectra.png")
+
+# Number of clusters
+num_clusters <- length(unique(PostMerge6Clusters))
+
+# Calculate mean spectra for each cluster
+mean_spectra <- t(sapply(1:num_clusters, function(cluster) {
+  colMeans(filtered_matrix[PostMerge6Clusters == cluster, ])
+}))
+
+# Custom cluster colors
+cluster_colors <- c(
+  "orange",   # For 1
+  "red",      # For 10
+  "green",    # For 11
+  "yellow",   # For 12
+  "blue",     # For 13
+  "purple"    # For 14
+)
+
+# Determine the range of y-axis for zooming out
+y_range <- range(mean_spectra)
+
+# Increase the range by 10% for zooming out
+y_zoom_out <- (y_range[2] - y_range[1]) * 0.1
+y_limits <- c(y_range[1] - y_zoom_out, y_range[2] + y_zoom_out)
+
+# Plot the mean spectra for each cluster
+plot(1:ncol(filtered_matrix), mean_spectra[1, ], type = 'l', col = cluster_colors[1], 
+     xlab = expression(paste('Wavelength (cm'^'-1',')')), ylab = 'Mean Intensity', 
+     main = 'Mean Spectra Coloured by Cluster',
+     ylim = y_limits, lwd = 2)  # Set initial line width to 2
+for (i in 2:num_clusters) {
+  lines(1:ncol(filtered_matrix), mean_spectra[i, ], col = cluster_colors[i], lwd = 2)  # Set line width to 2
+}
+
+# Close the PNG device
+dev.off()
+
+
+```
+
+
+# Mean Spectra Pre Merge 
+
+```{r}
+
+# Save the plot as a PNG file
+png(filename = "PreMerge8_clustering_MeanSpectra.png")
+
+cluster_colors <- c(
+  "orange",# For 1
+  "lightblue",             # For 10
+  "magenta",           # For 11
+  "green",          # For 12
+  "yellow",            # For 13
+  "blue",           # For 14
+  "red",
+  "purple"
+  )
+
+# Number of clusters
+num_clusters <- length(unique(PreMerge8Clusters))
+
+# Calculate mean spectra for each cluster
+mean_spectra <- t(sapply(1:num_clusters, function(cluster) {
+  colMeans(filtered_matrix[PreMerge8Clusters == cluster, ])
+}))
+
+# Determine the range of y-axis for zooming out
+y_range <- range(mean_spectra)
+
+# Increase the range by 10% for zooming out
+y_zoom_out <- (y_range[2] - y_range[1]) * 0.1
+y_limits <- c(y_range[1] - y_zoom_out, y_range[2] + y_zoom_out)
+
+# Plot the mean spectra for each cluster
+plot(1:ncol(filtered_matrix), mean_spectra[1, ], type = 'l', col = cluster_colors[1], 
+     xlab = expression(paste('Wavelength (cm'^'-1',')')), ylab = 'Mean Intensity', 
+     main = 'Mean Spectra Coloured by Cluster',
+     ylim = y_limits, lwd = 2)  # Set initial line width to 2
+for (i in 2:num_clusters) {
+  lines(1:ncol(filtered_matrix), mean_spectra[i, ], col = cluster_colors[i], lwd = 2)  # Set line width to 2
+}
+
+
+dev.off()
+```
+
+
+# Sonic HPC Code 
+
+Many of the results were obtained via Sonic, I have attached code below. Although much of it is repetition from above.
+
+## Sample PGMM
+
+This was run for q ranging from 1 to 5, and all 8 models as defined in dissertation.
+```{r}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+load("salinas_filtered_matrix.RData")
+
+
+library(pgmm, lib.loc = "/home/people/17390566")
+
+PGMM_fit5S_UUU = pgmmEM(filtered_matrix, rG = 6, rq = 5, zstart=2, modelSubset="UUU") 
+
+save(PGMM_fit5S_UUU, file = "PGMM_fit5S_UUU.RData")
+
+```
+
+## HD-GMM
+
+This code was used to fit all models, 10 cores were used and 1 to 9 clusters were explored.
+
+```{r}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+install.packages("HDclassif", lib = "/home/people/17390566")
+library(HDclassif, lib.loc = "/home/people/17390566")
+
+load("salinas_filtered_matrix.RData")
+
+res.hddc_S = hddc(filtered_matrix, model="ALL", K = 1:9, mc.cores = 10)
+
+save(res.hddc_S, file = "res.hddc_S.RData")
+
+```
+
+
+## MIFA
+
+Note reduced number of iterations may have led to poor convergence. 
+
+```{r}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+install.packages("IMIFA", lib = "/home/people/17390566")
+library(IMIFA, lib.loc = "/home/people/17390566")
+
+load("salinas_filtered_matrix.RData")
+
+simMIFA  <- mcmc_IMIFA(filtered_matrix, method="MIFA", n.iters=10000, range.G=1:10, z.init="kmeans")
+
+save(simMIFA, file = "simMIFA_Sonic.RData")
+
+```
+
+## MFA
+
+Sample MFA code using PGMM package and appropriate model 'CCU'.
+
+```{r}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+load("salinas_filtered_matrix.RData")
+
+library(pgmm, lib.loc = "/home/people/17390566")
+
+res.mfa3 = pgmmEM(filtered_matrix, rG=6, rq=1:5, modelSubset='CCU', zstart = 2, seed = 123)
+
+save(res.mfa3, file = "MFA_G6.RData")
+
+```
+
+Code to explore range of number of clusters
+
+```{r}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+load("salinas_filtered_matrix.RData")
+
+library(pgmm, lib.loc = "/home/people/17390566")
+
+res.mfa1 = pgmmEM(filtered_matrix,rG=1:8, rq=1:5, modelSubset='CCU', zstart = 2, seed = 123)
+
+save(res.mfa1, file = "MFA_BIC_S.RData")
+
+```
+
