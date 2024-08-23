@@ -1680,7 +1680,7 @@ xlog <- function (x)
 Function to perform merging of co-clustering output, by rows and columns 
 
 ```{r}
-combo <- function(data, CoClustOutput, n = nrow(data), d = ncol(data)) {
+coClustCombi <- function(data, CoClustOutput, n = nrow(data), d = ncol(data)) {
     # Initialize structures for row clusters
     K_row_initial <- CoClustOutput@nbcocluster[1]
     combiRow <- list()
@@ -1831,7 +1831,7 @@ combo <- function(data, CoClustOutput, n = nrow(data), d = ncol(data)) {
         steps = steps  # Add steps to the output
     )
     output$title <- "Combining row and column clusters for co-clustering"  # Add the title here
-    class(output) <- "clustCombo"
+    class(output) <- "coClustCombo"
     return(output)
 }
 
@@ -1842,7 +1842,7 @@ combo <- function(data, CoClustOutput, n = nrow(data), d = ncol(data)) {
 ## Summary method
 
 ```{r}
-summary.clustCombo <- function(x, digits = getOption("digits"), ...) {
+summary.coClustCombo <- function(x, digits = getOption("digits"), ...) {
     # Print the title with border lines
     cat(rep("-", nchar(x$title)), "\n", sep = "")
     cat(x$title, "\n")
@@ -2052,7 +2052,7 @@ The output here is that from the co-clustering function from blockcluster packag
 output = coclusterContinuous (filtered_matrix, nbcocluster =c(8,8)) #Input data and state row and column cluster numbers
 
 # Run merging algorithm on output
-AttemptCombo = combo(CoClustOutput = output, data = filtered_matrix)
+AttemptCombo = coClustCombi(CoClustOutput = output, data = filtered_matrix)
 
 # Summary function
 summary(AttemptCombo)
